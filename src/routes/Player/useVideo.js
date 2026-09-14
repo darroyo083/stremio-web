@@ -35,8 +35,11 @@ const useVideo = () => {
         subtitlesOutlineColor: null,
         extraSubtitlesTracks: [],
         selectedExtraSubtitlesTrackId: null,
+        selectedSecondarySubtitlesTrackId: null,
+        selectedSecondaryExtraSubtitlesTrackId: null,
         extraSubtitlesSize: null,
         extraSubtitlesDelay: null,
+        secondarySubtitlesDelay: 0,
         extraSubtitlesOffset: null,
         extraSubtitlesTextColor: null,
         extraSubtitlesBackgroundColor: null,
@@ -123,8 +126,8 @@ const useVideo = () => {
     }, [setProp]);
 
     const setSubtitlesTrack = React.useCallback((id) => {
-        setProp('selectedSubtitlesTrackId', id);
         setProp('selectedExtraSubtitlesTrackId', null);
+        setProp('selectedSubtitlesTrackId', id);
     }, [setProp]);
 
     const setExtraSubtitlesTrack = React.useCallback((id) => {
@@ -132,8 +135,22 @@ const useVideo = () => {
         setProp('selectedExtraSubtitlesTrackId', id);
     }, [setProp]);
 
+    const setSecondarySubtitlesTrack = React.useCallback((id) => {
+        setProp('selectedSecondaryExtraSubtitlesTrackId', null);
+        setProp('selectedSecondarySubtitlesTrackId', id);
+    }, [setProp]);
+
+    const setSecondaryExtraSubtitlesTrack = React.useCallback((id) => {
+        setProp('selectedSecondarySubtitlesTrackId', null);
+        setProp('selectedSecondaryExtraSubtitlesTrackId', id);
+    }, [setProp]);
+
     const setSubtitlesDelay = React.useCallback((delay) => {
         setProp('extraSubtitlesDelay', delay);
+    }, [setProp]);
+
+    const setSecondarySubtitlesDelay = React.useCallback((delay) => {
+        setProp('secondarySubtitlesDelay', delay);
     }, [setProp]);
 
     const setSubtitlesSize = React.useCallback((size) => {
@@ -193,6 +210,10 @@ const useVideo = () => {
         events.emit('extraSubtitlesTrackLoaded', track);
     };
 
+    const onSecondaryExtraSubtitlesTrackLoaded = (track) => {
+        events.emit('secondaryExtraSubtitlesTrackLoaded', track);
+    };
+
     const onExtraSubtitlesTrackAdded = (track) => {
         events.emit('extraSubtitlesTrackAdded', track);
     };
@@ -223,6 +244,7 @@ const useVideo = () => {
         video.current.on('implementationChanged', onImplementationChanged);
         video.current.on('subtitlesTrackLoaded', onSubtitlesTrackLoaded);
         video.current.on('extraSubtitlesTrackLoaded', onExtraSubtitlesTrackLoaded);
+        video.current.on('secondaryExtraSubtitlesTrackLoaded', onSecondaryExtraSubtitlesTrackLoaded);
         video.current.on('extraSubtitlesTrackAdded', onExtraSubtitlesTrackAdded);
 
         return () => {
@@ -259,6 +281,9 @@ const useVideo = () => {
         setSubtitlesBackgroundColor,
         setSubtitlesOutlineColor,
         setExtraSubtitlesTrack,
+        setSecondarySubtitlesTrack,
+        setSecondaryExtraSubtitlesTrack,
+        setSecondarySubtitlesDelay,
         setVideoScale,
         setFullscreen,
     };

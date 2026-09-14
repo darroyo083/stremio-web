@@ -1,9 +1,11 @@
 // Copyright (C) 2017-2026 Smart code 203358507
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CONSTANTS, languages, useFileDropListener, useShortcut, useToast } from 'stremio/common';
 import { snapSubtitleDelay, SUBTITLES_DELAY_STEP_MS } from './subtitleDelay';
+const { findTwinCueSecondaryTrack } = require('./twinCueSubtitles');
+const { resolveSecondarySubtitle } = require('./nativeSubtitleSelection');
 
 const withFallbackLabels = (tracks?: SubtitleTrack[] | null): SubtitleTrack[] => {
     if (!Array.isArray(tracks)) {
@@ -96,11 +98,7 @@ const buildCandidates = (
     const sessionLanguage = normalizeLanguage(sessionPreference?.language);
     const savedLanguage = normalizeLanguage(savedTrack?.language);
     const savedSource = savedTrack ? (savedTrack.embedded ? 'embedded' : 'external') : undefined;
-    const preferredSource = sessionEnabled ? sessionPreference.source : savedSource;
-    const sources: SubtitleSource[] = preferredSource === 'external' ?
-        ['external', 'embedded']
-        :
-        ['embedded', 'external'];
+    const sources: SubtitleSource[] = ['embedded', 'external'];
 
     const addLanguage = (language?: string) => {
         if (language && !languagesOrder.includes(language)) {
@@ -171,13 +169,14 @@ const useSubtitles = ({
     toggleSubtitlesMenu,
 }: UseSubtitlesArgs): UseSubtitlesResult => {
     const { t } = useTranslation();
-    const { setSubtitlesTrack, setExtraSubtitlesTrack, setSubtitlesDelay, setSubtitlesSize, setSubtitlesOffset } = video;
+    const { setSubtitlesTrack, setExtraSubtitlesTrack, setSecondarySubtitlesTrack, setSecondaryExtraSubtitlesTrack, setSubtitlesDelay, setSecondarySubtitlesDelay, setSubtitlesSize, setSubtitlesOffset } = video;
     const toast = useToast();
     const videoRef = useRef(video);
     const settingsRef = useRef(settings);
     const trackSelectionLocked = useRef(false);
     const appliedTrack = useRef<{ id: string, source: SubtitleSource } | null>(null);
     const lastSelectedTrack = useRef<SelectedSubtitleTrack | null>(null);
+    const [secondaryPreference, setSecondaryPreference] = useState<{ enabled: boolean, language?: string, source?: SubtitleSource, id?: string } | null>(null);
 
     videoRef.current = video;
     settingsRef.current = settings;
@@ -232,7 +231,7 @@ const useSubtitles = ({
             findTrackById(video.state.subtitlesTracks, video.state.selectedSubtitlesTrackId)
             :
             findTrackById(video.state.extraSubtitlesTracks, video.state.selectedExtraSubtitlesTrackId);
-        const selectedSource = video.state.selectedSubtitlesTrackId !== null ?
+        const selectedSource: SubtitleSource | undefined = video.state.selectedSubtitlesTrackId !== null ?
             'embedded'
             :
             video.state.selectedExtraSubtitlesTrackId !== null ?
@@ -246,6 +245,8 @@ const useSubtitles = ({
         appliedTrack.current = null;
         setSubtitlesTrack(null);
         setExtraSubtitlesTrack(null);
+        setSecondarySubtitlesTrack(null);
+        setSecondaryExtraSubtitlesTrack(null);
         streamStateChanged({ subtitleTrack: null });
         subtitlePreferenceChanged({
             enabled: false,
@@ -258,6 +259,8 @@ const useSubtitles = ({
         subtitlePreferenceChanged,
         setSubtitlesTrack,
         setExtraSubtitlesTrack,
+        setSecondarySubtitlesTrack,
+        setSecondaryExtraSubtitlesTrack,
         video.state.subtitlesTracks,
         video.state.extraSubtitlesTracks,
         video.state.selectedSubtitlesTrackId,
@@ -288,10 +291,45 @@ const useSubtitles = ({
         rememberTrack(track, false);
     }, [disableSubtitles, rememberTrack, setExtraSubtitlesTrack]);
 
+    const selectSecondarySubtitlesLanguage = useCallback((language: string | null) => {
+        const normalized = normalizeLanguage(language);
+        if (!normalized) {
+            setSecondaryPreference({ enabled: false });
+            setSecondarySubtitlesTrack(null);
+            setSecondaryExtraSubtitlesTrack(null);
+            return;
+        }
+        setSecondaryPreference({ enabled: true, language: normalized });
+    }, [setSecondarySubtitlesTrack, setSecondaryExtraSubtitlesTrack]);
+
+    const selectSecondaryEmbeddedTrack = useCallback((track: SubtitleTrack | null) => {
+        if (!track) {
+            selectSecondarySubtitlesLanguage(null);
+            return;
+        }
+        const language = normalizeLanguage(track.lang);
+        setSecondaryPreference({ enabled: true, source: 'embedded', id: track.id, ...(language ? { language } : {}) });
+        setSecondarySubtitlesTrack(track.id);
+    }, [selectSecondarySubtitlesLanguage, setSecondarySubtitlesTrack]);
+
+    const selectSecondaryExtraTrack = useCallback((track: SubtitleTrack | null) => {
+        if (!track) {
+            selectSecondarySubtitlesLanguage(null);
+            return;
+        }
+        const language = normalizeLanguage(track.lang);
+        setSecondaryPreference({ enabled: true, source: 'external', id: track.id, ...(language ? { language } : {}) });
+        setSecondaryExtraSubtitlesTrack(track.id);
+    }, [selectSecondarySubtitlesLanguage, setSecondaryExtraSubtitlesTrack]);
+
     const changeDelay = useCallback((delay: number) => {
         setSubtitlesDelay(delay);
         streamStateChanged({ subtitleDelay: delay });
     }, [streamStateChanged, setSubtitlesDelay]);
+
+    const changeSecondaryDelay = useCallback((delay: number) => {
+        setSecondarySubtitlesDelay(delay);
+    }, [setSecondarySubtitlesDelay]);
 
     const increaseDelay = useCallback(() => {
         const delay = (video.state.extraSubtitlesDelay ?? 0) + SUBTITLES_DELAY_STEP_MS;
@@ -398,8 +436,9 @@ const useSubtitles = ({
             bestCandidate;
 
         // Reapply once per stream even if the controller already reports the same track.
-        if (appliedTrack.current?.id === trackToApply.track.id &&
-            appliedTrack.current.source === trackToApply.source) {
+        const currentAppliedTrack = appliedTrack.current;
+        if (currentAppliedTrack && currentAppliedTrack.id === trackToApply.track.id &&
+            currentAppliedTrack.source === trackToApply.source) {
             return;
         }
 
@@ -424,6 +463,79 @@ const useSubtitles = ({
         setSubtitlesTrack,
         setExtraSubtitlesTrack,
         setSubtitlesDelay,
+        video.state.extraSubtitlesTracks,
+        video.state.selectedExtraSubtitlesTrackId,
+        video.state.selectedSubtitlesTrackId,
+        video.state.stream,
+        video.state.subtitlesTracks,
+    ]);
+
+    useEffect(() => {
+        if (video.state.stream === null) {
+            return;
+        }
+
+        const primaryTrackId = video.state.selectedExtraSubtitlesTrackId ?? video.state.selectedSubtitlesTrackId;
+        if (secondaryPreference?.enabled === false) {
+            if (video.state.selectedSecondarySubtitlesTrackId !== null) {
+                setSecondarySubtitlesTrack(null);
+            }
+            if (video.state.selectedSecondaryExtraSubtitlesTrackId !== null) {
+                setSecondaryExtraSubtitlesTrack(null);
+            }
+            return;
+        }
+
+        if (secondaryPreference?.enabled === true && secondaryPreference.language) {
+            const resolved = resolveSecondarySubtitle({
+                embeddedTracks: video.state.subtitlesTracks,
+                externalTracks: video.state.extraSubtitlesTracks,
+                language: secondaryPreference.language,
+                primaryTrackId,
+                explicitSource: secondaryPreference.source,
+                explicitId: secondaryPreference.id,
+            });
+
+            if (!resolved) {
+                if (video.state.selectedSecondarySubtitlesTrackId !== null) {
+                    setSecondarySubtitlesTrack(null);
+                }
+                if (video.state.selectedSecondaryExtraSubtitlesTrackId !== null) {
+                    setSecondaryExtraSubtitlesTrack(null);
+                }
+                return;
+            }
+
+            if (resolved.source === 'embedded') {
+                if (video.state.selectedSecondarySubtitlesTrackId !== resolved.track.id || video.state.selectedSecondaryExtraSubtitlesTrackId !== null) {
+                    setSecondarySubtitlesTrack(resolved.track.id);
+                }
+            } else if (video.state.selectedSecondaryExtraSubtitlesTrackId !== resolved.track.id || video.state.selectedSecondarySubtitlesTrackId !== null) {
+                setSecondaryExtraSubtitlesTrack(resolved.track.id);
+            }
+            return;
+        }
+
+        const pairedSecondary = typeof video.state.selectedExtraSubtitlesTrackId === 'string' ?
+            findTwinCueSecondaryTrack(video.state.extraSubtitlesTracks, video.state.selectedExtraSubtitlesTrackId)
+            :
+            null;
+        if (pairedSecondary) {
+            if (video.state.selectedSecondaryExtraSubtitlesTrackId !== pairedSecondary.id || video.state.selectedSecondarySubtitlesTrackId !== null) {
+                setSecondaryExtraSubtitlesTrack(pairedSecondary.id);
+            }
+        } else {
+            if (video.state.selectedSecondarySubtitlesTrackId !== null) {
+                setSecondarySubtitlesTrack(null);
+            }
+            if (video.state.selectedSecondaryExtraSubtitlesTrackId !== null) {
+                setSecondaryExtraSubtitlesTrack(null);
+            }
+        }
+    }, [
+        secondaryPreference,
+        setSecondarySubtitlesTrack,
+        setSecondaryExtraSubtitlesTrack,
         video.state.extraSubtitlesTracks,
         video.state.selectedExtraSubtitlesTrackId,
         video.state.selectedSubtitlesTrackId,
@@ -562,6 +674,8 @@ const useSubtitles = ({
         subtitlePreferenceChanged,
         video.state.extraSubtitlesTracks,
         video.state.selectedExtraSubtitlesTrackId,
+        video.state.selectedSecondarySubtitlesTrackId,
+        video.state.selectedSecondaryExtraSubtitlesTrackId,
         video.state.selectedSubtitlesTrackId,
         video.state.subtitlesTracks,
     ]), !menusOpen);
@@ -582,31 +696,45 @@ const useSubtitles = ({
         subtitlesSize: video.state.subtitlesSize,
         extraSubtitlesTracks: video.state.extraSubtitlesTracks,
         selectedExtraSubtitlesTrackId: video.state.selectedExtraSubtitlesTrackId,
+        selectedSecondarySubtitlesTrackId: video.state.selectedSecondarySubtitlesTrackId,
+        selectedSecondaryExtraSubtitlesTrackId: video.state.selectedSecondaryExtraSubtitlesTrackId,
         extraSubtitlesOffset: video.state.extraSubtitlesOffset,
         extraSubtitlesDelay: video.state.extraSubtitlesDelay,
+        secondarySubtitlesDelay: video.state.secondarySubtitlesDelay ?? 0,
         extraSubtitlesSize: video.state.extraSubtitlesSize,
         assSubtitlesStylingActive: video.state.assSubtitlesStylingActive,
         onSubtitlesTrackSelected: selectEmbeddedTrack,
         onExtraSubtitlesTrackSelected: selectExtraTrack,
+        onSecondarySubtitlesLanguageSelected: selectSecondarySubtitlesLanguage,
+        onSecondarySubtitlesTrackSelected: selectSecondaryEmbeddedTrack,
+        onSecondaryExtraSubtitlesTrackSelected: selectSecondaryExtraTrack,
         onSubtitlesOffsetChanged: changeOffset,
         onSubtitlesSizeChanged: changeSize,
         onExtraSubtitlesOffsetChanged: changeOffset,
         onExtraSubtitlesDelayChanged: changeDelay,
+        onSecondarySubtitlesDelayChanged: changeSecondaryDelay,
         onExtraSubtitlesSizeChanged: changeSize,
     }), [
         changeDelay,
+        changeSecondaryDelay,
         changeOffset,
         changeSize,
         selectEmbeddedTrack,
         selectExtraTrack,
+        selectSecondarySubtitlesLanguage,
+        selectSecondaryEmbeddedTrack,
+        selectSecondaryExtraTrack,
         settings.interfaceLanguage,
         settings.subtitlesLanguage,
         video.state.extraSubtitlesDelay,
+        video.state.secondarySubtitlesDelay,
         video.state.extraSubtitlesOffset,
         video.state.extraSubtitlesSize,
         video.state.extraSubtitlesTracks,
         video.state.assSubtitlesStylingActive,
         video.state.selectedExtraSubtitlesTrackId,
+        video.state.selectedSecondarySubtitlesTrackId,
+        video.state.selectedSecondaryExtraSubtitlesTrackId,
         video.state.selectedSubtitlesTrackId,
         video.state.subtitlesOffset,
         video.state.subtitlesSize,

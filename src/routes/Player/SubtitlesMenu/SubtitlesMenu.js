@@ -32,6 +32,15 @@ const sortByValues = (items, values) => items.sort((a, b) => {
     return left - right;
 });
 
+const sortTracksByOrigin = (tracks) => tracks.slice().sort((a, b) => {
+    const left = ORIGIN_PRIORITIES.indexOf(a.origin);
+    const right = ORIGIN_PRIORITIES.indexOf(b.origin);
+    if (left === -1 && right === -1) return 0;
+    if (left === -1) return 1;
+    if (right === -1) return -1;
+    return left - right;
+});
+
 const SubtitlesMenu = React.memo(React.forwardRef((props, ref) => {
     const subtitlesTracks = React.useMemo(() => {
         return normalizeTracksLang(Array.isArray(props.subtitlesTracks) ? props.subtitlesTracks : []);
@@ -76,16 +85,35 @@ const SubtitlesMenu = React.memo(React.forwardRef((props, ref) => {
                 :
                 null;
     }, [subtitlesTracks, extraSubtitlesTracks, props.selectedSubtitlesTrackId, props.selectedExtraSubtitlesTrackId]);
-    const subtitlesTracksForLanguage = React.useMemo(() => {
-        const tracks = allSubtitles.filter(({ lang }) => lang === selectedSubtitlesLanguage);
-        return sortByValues(tracks, ORIGIN_PRIORITIES);
+    const selectedSecondarySubtitlesLanguage = React.useMemo(() => {
+        const selectedId = typeof props.selectedSecondarySubtitlesTrackId === 'string' ?
+            props.selectedSecondarySubtitlesTrackId
+            :
+            props.selectedSecondaryExtraSubtitlesTrackId;
+        if (typeof selectedId !== 'string') {
+            return null;
+        }
+        return allSubtitles.reduce((selectedLanguage, { id, lang }) => {
+            return id === selectedId ? lang : selectedLanguage;
+        }, null);
+    }, [allSubtitles, props.selectedSecondarySubtitlesTrackId, props.selectedSecondaryExtraSubtitlesTrackId]);
+    const secondarySubtitlesLanguages = React.useMemo(() => {
+        return [...new Set(allSubtitles.map(({ lang }) => lang))]
+            .filter((lang) => lang !== selectedSubtitlesLanguage)
+            .sort((a, b) => a.localeCompare(b));
     }, [allSubtitles, selectedSubtitlesLanguage]);
+    const subtitlesTracksForLanguage = React.useMemo(() => {
+        return sortTracksByOrigin(allSubtitles.filter(({ lang }) => lang === selectedSubtitlesLanguage));
+    }, [allSubtitles, selectedSubtitlesLanguage]);
+    const secondaryTracksForLanguage = React.useMemo(() => {
+        return sortTracksByOrigin(allSubtitles.filter(({ lang }) => lang === selectedSecondarySubtitlesLanguage));
+    }, [allSubtitles, selectedSecondarySubtitlesLanguage]);
     const onMouseDown = React.useCallback((event) => {
         event.nativeEvent.subtitlesMenuClosePrevented = true;
     }, []);
     const subtitlesLanguageOnClick = React.useCallback((event) => {
         const tracks = allSubtitles.filter(({ lang }) => lang === event.currentTarget.dataset.lang);
-        const track = sortByValues(tracks, ORIGIN_PRIORITIES).shift();
+        const track = sortTracksByOrigin(tracks).shift();
 
         if (!track) {
             if (typeof props.onSubtitlesTrackSelected === 'function') {
@@ -115,16 +143,33 @@ const SubtitlesMenu = React.memo(React.forwardRef((props, ref) => {
             }
         }
     }, [props.onSubtitlesTrackSelected, props.onExtraSubtitlesTrackSelected]);
-    const onSubtitlesDelayChanged = React.useCallback((value) => {
-        if (typeof props.selectedExtraSubtitlesTrackId === 'string') {
-            if (props.extraSubtitlesDelay !== null && !isNaN(props.extraSubtitlesDelay)) {
-                if (typeof props.onExtraSubtitlesDelayChanged === 'function') {
-                    const delay = Math.round(value * 1000);
-                    props.onExtraSubtitlesDelayChanged(snapSubtitleDelay(delay, delay - props.extraSubtitlesDelay));
-                }
-            }
+    const secondarySubtitlesLanguageOnClick = React.useCallback((event) => {
+        const lang = event.currentTarget.dataset.lang;
+        if (typeof props.onSecondarySubtitlesLanguageSelected === 'function') {
+            props.onSecondarySubtitlesLanguageSelected(typeof lang === 'string' ? lang : null);
         }
-    }, [props.selectedExtraSubtitlesTrackId, props.extraSubtitlesDelay, props.onExtraSubtitlesDelayChanged]);
+    }, [props.onSecondarySubtitlesLanguageSelected]);
+    const secondaryTrackOnSelect = React.useCallback((track) => {
+        if (track.embedded) {
+            if (typeof props.onSecondarySubtitlesTrackSelected === 'function') {
+                props.onSecondarySubtitlesTrackSelected(track);
+            }
+        } else if (typeof props.onSecondaryExtraSubtitlesTrackSelected === 'function') {
+            props.onSecondaryExtraSubtitlesTrackSelected(track);
+        }
+    }, [props.onSecondarySubtitlesTrackSelected, props.onSecondaryExtraSubtitlesTrackSelected]);
+    const onSubtitlesDelayChanged = React.useCallback((value) => {
+        const primaryActive = typeof props.selectedSubtitlesTrackId === 'string' || typeof props.selectedExtraSubtitlesTrackId === 'string';
+        if (primaryActive && props.extraSubtitlesDelay !== null && !isNaN(props.extraSubtitlesDelay) && typeof props.onExtraSubtitlesDelayChanged === 'function') {
+            const delay = Math.round(value * 1000);
+            props.onExtraSubtitlesDelayChanged(snapSubtitleDelay(delay, delay - props.extraSubtitlesDelay));
+        }
+    }, [props.selectedSubtitlesTrackId, props.selectedExtraSubtitlesTrackId, props.extraSubtitlesDelay, props.onExtraSubtitlesDelayChanged]);
+    const onSecondarySubtitlesDelayChanged = React.useCallback((value) => {
+        if (typeof props.onSecondarySubtitlesDelayChanged === 'function') {
+            props.onSecondarySubtitlesDelayChanged(Math.round(value * 1000));
+        }
+    }, [props.onSecondarySubtitlesDelayChanged]);
     const onSubtitlesSizeChanged = React.useCallback((value) => {
         if (typeof props.selectedSubtitlesTrackId === 'string') {
             if (props.subtitlesSize !== null && !isNaN(props.subtitlesSize)) {
@@ -186,6 +231,49 @@ const SubtitlesMenu = React.memo(React.forwardRef((props, ref) => {
                     ))}
                 </div>
             </div>
+            <div className={styles['languages-container']}>
+                <div className={styles['languages-header']}>{ t('SETTINGS_SECONDARY_SUBTITLES_LANGUAGE') }</div>
+                <div className={styles['languages-list']}>
+                    <Button title={t('OFF')} className={classnames(styles['language-option'], { 'selected': selectedSecondarySubtitlesLanguage === null })} onClick={secondarySubtitlesLanguageOnClick}>
+                        <div className={styles['language-label']}>{ t('OFF') }</div>
+                        {
+                            selectedSecondarySubtitlesLanguage === null ?
+                                <div className={styles['icon']} />
+                                :
+                                null
+                        }
+                    </Button>
+                    {secondarySubtitlesLanguages.map((lang, index) => (
+                        <Button key={index} title={languages.label(lang)} className={classnames(styles['language-option'], { 'selected': selectedSecondarySubtitlesLanguage === lang })} data-lang={lang} onClick={secondarySubtitlesLanguageOnClick}>
+                            <div className={styles['language-label']}>{ languages.label(lang) }</div>
+                            {
+                                selectedSecondarySubtitlesLanguage === lang ?
+                                    <div className={styles['icon']} />
+                                    :
+                                    null
+                            }
+                        </Button>
+                    ))}
+                </div>
+            </div>
+            {
+                selectedSecondarySubtitlesLanguage !== null && secondaryTracksForLanguage.length > 1 ?
+                    <div className={styles['variants-container']}>
+                        <div className={styles['variants-header']}>{ t('PLAYER_SUBTITLES_VARIANTS') }</div>
+                        <div className={styles['variants-list']}>
+                            {secondaryTracksForLanguage.map((track, index) => (
+                                <SubtitleVariant
+                                    key={index}
+                                    track={track}
+                                    selected={props.selectedSecondarySubtitlesTrackId === track.id || props.selectedSecondaryExtraSubtitlesTrackId === track.id}
+                                    onSelect={secondaryTrackOnSelect}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                    :
+                    null
+            }
             <div className={styles['variants-container']}>
                 <div className={styles['variants-header']}>{ t('PLAYER_SUBTITLES_VARIANTS') }</div>
                 {
@@ -219,6 +307,15 @@ const SubtitlesMenu = React.memo(React.forwardRef((props, ref) => {
                         step={SUBTITLES_DELAY_STEP_MS / 1000}
                         disabled={props.extraSubtitlesDelay === null}
                         onChange={onSubtitlesDelayChanged}
+                    />
+                    <Stepper
+                        className={styles['stepper']}
+                        label={'Secondary Delay'}
+                        value={(props.secondarySubtitlesDelay ?? 0) / 1000}
+                        unit={'s'}
+                        step={SUBTITLES_DELAY_STEP_MS / 1000}
+                        disabled={typeof props.selectedSecondarySubtitlesTrackId !== 'string' && typeof props.selectedSecondaryExtraSubtitlesTrackId !== 'string'}
+                        onChange={onSecondarySubtitlesDelayChanged}
                     />
                     <Stepper
                         className={styles['stepper']}
@@ -275,16 +372,23 @@ SubtitlesMenu.propTypes = {
         ass: PropTypes.bool
     })),
     selectedExtraSubtitlesTrackId: PropTypes.string,
+    selectedSecondarySubtitlesTrackId: PropTypes.string,
+    selectedSecondaryExtraSubtitlesTrackId: PropTypes.string,
     extraSubtitlesOffset: PropTypes.number,
     extraSubtitlesDelay: PropTypes.number,
+    secondarySubtitlesDelay: PropTypes.number,
     extraSubtitlesSize: PropTypes.number,
     assSubtitlesStylingActive: PropTypes.bool,
     onSubtitlesTrackSelected: PropTypes.func,
     onExtraSubtitlesTrackSelected: PropTypes.func,
+    onSecondarySubtitlesLanguageSelected: PropTypes.func,
+    onSecondarySubtitlesTrackSelected: PropTypes.func,
+    onSecondaryExtraSubtitlesTrackSelected: PropTypes.func,
     onSubtitlesOffsetChanged: PropTypes.func,
     onSubtitlesSizeChanged: PropTypes.func,
     onExtraSubtitlesOffsetChanged: PropTypes.func,
     onExtraSubtitlesDelayChanged: PropTypes.func,
+    onSecondarySubtitlesDelayChanged: PropTypes.func,
     onExtraSubtitlesSizeChanged: PropTypes.func
 };
 
