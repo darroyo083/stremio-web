@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { CONSTANTS, languages, useFileDropListener, useShortcut, useToast } from 'stremio/common';
 import { snapSubtitleDelay, SUBTITLES_DELAY_STEP_MS } from './subtitleDelay';
 const { findTwinCueSecondaryTrack } = require('./twinCueSubtitles');
-const { resolveSecondarySubtitle, resolveSecondaryLanguageSelection } = require('./nativeSubtitleSelection');
+const { resolveSecondarySubtitle, resolveSecondaryLanguageSelection, reconcileSecondaryPreferenceForStreamChange } = require('./nativeSubtitleSelection');
 
 const withFallbackLabels = (tracks?: SubtitleTrack[] | null): SubtitleTrack[] => {
     if (!Array.isArray(tracks)) {
@@ -393,6 +393,7 @@ const useSubtitles = ({
         trackSelectionLocked.current = false;
         appliedTrack.current = null;
         lastSelectedTrack.current = null;
+        setSecondaryPreference((preference) => reconcileSecondaryPreferenceForStreamChange(preference));
     }, [video.state.stream]);
 
     useEffect(() => {

@@ -1,6 +1,7 @@
 // Copyright (C) 2017-2026 Smart code 203358507
 
 const { getTwinCueTrackRole, findTwinCueSecondaryTrack } = require('./twinCueSubtitles');
+const allLanguages = require('langs').all();
 
 const normalizeLanguage = (value) => {
     if (typeof value !== 'string' || value.length === 0) {
@@ -8,7 +9,9 @@ const normalizeLanguage = (value) => {
     }
     const normalized = value.trim().toLowerCase();
     const bracketedCode = /\[([a-z]{2,3})\]$/.exec(normalized);
-    return bracketedCode ? bracketedCode[1] : normalized;
+    const code = bracketedCode ? bracketedCode[1] : normalized;
+    const language = allLanguages.find((candidate) => [candidate['1'], candidate['2'], candidate['2B'], candidate['2T'], candidate['3'], candidate.ietf].includes(code));
+    return language ? language['2'] : code;
 };
 
 const languageMatches = (track, language) => {
@@ -74,6 +77,16 @@ const resolveSecondaryLanguageSelection = ({
     const selectedExternal = findExact(externalTracks, selectedExternalId);
     return selectedExternal ? normalizeLanguage(selectedExternal.lang) : null;
 };
+const reconcileSecondaryPreferenceForStreamChange = (preference) => {
+    if (!preference || preference.enabled !== true || (!preference.source && !preference.id)) {
+        return preference;
+    }
+    const language = normalizeLanguage(preference.language);
+    return {
+        enabled: true,
+        ...(language ? { language } : {}),
+    };
+};
 const resolveSecondarySubtitle = ({ embeddedTracks, externalTracks, language, primaryTrackId, explicitSource, explicitId }) => {
     if (explicitSource === 'embedded') {
         const exact = findExact(embeddedTracks, explicitId, language);
@@ -108,4 +121,5 @@ module.exports = {
     resolvePrimarySubtitle,
     resolveSecondarySubtitle,
     resolveSecondaryLanguageSelection,
+    reconcileSecondaryPreferenceForStreamChange,
 };
