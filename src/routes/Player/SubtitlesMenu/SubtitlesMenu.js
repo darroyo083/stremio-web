@@ -86,6 +86,16 @@ const SubtitlesMenu = React.memo(React.forwardRef((props, ref) => {
                 null;
     }, [subtitlesTracks, extraSubtitlesTracks, props.selectedSubtitlesTrackId, props.selectedExtraSubtitlesTrackId]);
     const selectedSecondarySubtitlesLanguage = React.useMemo(() => {
+        // An explicit language choice must be visible immediately, even before a
+        // lazy external track has reached mpv. Undefined means automatic pairing;
+        // null is the user's explicit OFF choice.
+        if (props.secondarySubtitlesLanguage !== undefined) {
+            return typeof props.secondarySubtitlesLanguage === 'string' ?
+                languages.toCode(props.secondarySubtitlesLanguage)
+                :
+                null;
+        }
+
         const selectedId = typeof props.selectedSecondarySubtitlesTrackId === 'string' ?
             props.selectedSecondarySubtitlesTrackId
             :
@@ -96,7 +106,7 @@ const SubtitlesMenu = React.memo(React.forwardRef((props, ref) => {
         return allSubtitles.reduce((selectedLanguage, { id, lang }) => {
             return id === selectedId ? lang : selectedLanguage;
         }, null);
-    }, [allSubtitles, props.selectedSecondarySubtitlesTrackId, props.selectedSecondaryExtraSubtitlesTrackId]);
+    }, [allSubtitles, props.secondarySubtitlesLanguage, props.selectedSecondarySubtitlesTrackId, props.selectedSecondaryExtraSubtitlesTrackId]);
     const secondarySubtitlesLanguages = React.useMemo(() => {
         return [...new Set(allSubtitles.map(({ lang }) => lang))]
             .filter((lang) => lang !== selectedSubtitlesLanguage)
@@ -374,6 +384,7 @@ SubtitlesMenu.propTypes = {
     selectedExtraSubtitlesTrackId: PropTypes.string,
     selectedSecondarySubtitlesTrackId: PropTypes.string,
     selectedSecondaryExtraSubtitlesTrackId: PropTypes.string,
+    secondarySubtitlesLanguage: PropTypes.string,
     extraSubtitlesOffset: PropTypes.number,
     extraSubtitlesDelay: PropTypes.number,
     secondarySubtitlesDelay: PropTypes.number,

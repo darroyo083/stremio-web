@@ -1,6 +1,7 @@
 const {
     resolvePrimarySubtitle,
     resolveSecondarySubtitle,
+    resolveSecondaryLanguageSelection,
 } = require('../src/routes/Player/nativeSubtitleSelection');
 
 const embeddedEngA = { id: 'EMBEDDED_5', lang: 'eng', embedded: true, origin: 'EMBEDDED' };
@@ -66,6 +67,61 @@ describe('native dual subtitle fallback hierarchy', () => {
         })).toEqual({ source: 'external', track: twinSecondary });
     });
 
+    test('preserves baseline OFF to language behavior with a normal external secondary track', () => {
+        const ordinaryExternalSpa = { id: 'external-spanish-track', lang: 'spa', origin: 'OpenSubtitles' };
+        expect(resolveSecondarySubtitle({
+            embeddedTracks: [],
+            externalTracks: [ordinaryExternalSpa],
+            language: 'spa',
+            primaryTrackId: 'external-english-track',
+        })).toEqual({ source: 'external', track: ordinaryExternalSpa });
+    });
+    test('keeps an explicit Spanish language selected while tracks are temporarily unavailable', () => {
+        const preference = { enabled: true, language: 'spa' };
+        expect(resolveSecondaryLanguageSelection({
+            preference,
+            embeddedTracks: [],
+            externalTracks: [],
+            selectedEmbeddedId: null,
+            selectedExternalId: null,
+        })).toBe('spa');
+
+        expect(resolveSecondaryLanguageSelection({
+            preference,
+            embeddedTracks: [embeddedEngA],
+            externalTracks: [twinMain],
+            selectedEmbeddedId: null,
+            selectedExternalId: null,
+        })).toBe('spa');
+
+        expect(resolveSecondaryLanguageSelection({
+            preference,
+            embeddedTracks: [embeddedEngA, embeddedSpa],
+            externalTracks: [twinMain, twinSecondary],
+            selectedEmbeddedId: 'EMBEDDED_9',
+            selectedExternalId: null,
+        })).toBe('spa');
+    });
+
+    test('treats OFF as an explicit choice even if a stale secondary track is still reported', () => {
+        expect(resolveSecondaryLanguageSelection({
+            preference: { enabled: false },
+            embeddedTracks: [embeddedSpa],
+            externalTracks: [twinSecondary],
+            selectedEmbeddedId: 'EMBEDDED_9',
+            selectedExternalId: twinSecondary.id,
+        })).toBeNull();
+    });
+
+    test('uses the applied secondary language when no explicit language preference exists', () => {
+        expect(resolveSecondaryLanguageSelection({
+            preference: null,
+            embeddedTracks: [],
+            externalTracks: [twinSecondary],
+            selectedEmbeddedId: null,
+            selectedExternalId: twinSecondary.id,
+        })).toBe('spa');
+    });
     test('preserves an explicit embedded variant by real track id', () => {
         expect(resolvePrimarySubtitle({
             embeddedTracks: [embeddedEngA, embeddedEngB],

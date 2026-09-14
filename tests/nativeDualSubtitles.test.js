@@ -239,6 +239,30 @@ describe('ShellVideo native dual external subtitles', () => {
         expect(hasSend(shellTransport, 'mpv-set-prop', ['sid', 'no'])).toBe(false);
     });
 
+    test('external secondary can be turned OFF without clearing primary', async () => {
+        const shellTransport = new FakeShellTransport();
+        const video = new ShellVideo({ shellTransport, containerElement: { style: {}, parentElement: null }, mpvSeparateWindow: false });
+        shellTransport.emit('mpv-prop-change', { name: 'mpv-version', data: '0.41.0' });
+        video.dispatch({ type: 'command', commandName: 'load', commandArgs: { stream: { url: 'https://example.test/external-off.mkv' }, platform: 'windows', assSubtitlesStyling: false, hardwareDecoding: false, gpuVideoProcessing: false, videoMode: null, time: 0 } });
+        await flush();
+        const primary = { id: 'external-main', lang: 'eng', url: 'https://example.test/main.srt' };
+        const secondary = { id: 'external-spanish-track', lang: 'spa', url: 'https://example.test/secondary.srt' };
+        video.dispatch({ type: 'command', commandName: 'addExtraSubtitlesTracks', commandArgs: { tracks: [primary, secondary] } });
+        video.dispatch({ type: 'setProp', propName: 'selectedExtraSubtitlesTrackId', propValue: primary.id });
+        shellTransport.emit('mpv-prop-change', { name: 'track-list', data: [
+            { id: 10, type: 'sub', lang: 'eng', title: 'STREMIO_EXTRA_SUBTITLE:' + encodeURIComponent(primary.id), external: true },
+        ] });
+        video.dispatch({ type: 'setProp', propName: 'selectedSecondaryExtraSubtitlesTrackId', propValue: secondary.id });
+        shellTransport.emit('mpv-prop-change', { name: 'track-list', data: [
+            { id: 10, type: 'sub', lang: 'eng', title: 'STREMIO_EXTRA_SUBTITLE:' + encodeURIComponent(primary.id), external: true },
+            { id: 11, type: 'sub', lang: 'spa', title: 'STREMIO_EXTRA_SUBTITLE:' + encodeURIComponent(secondary.id), external: true },
+        ] });
+        shellTransport.clear();
+        video.dispatch({ type: 'setProp', propName: 'selectedSecondaryExtraSubtitlesTrackId', propValue: null });
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['secondary-sid', 'no'])).toBe(true);
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['secondary-sub-delay', 0])).toBe(true);
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['sid', 'no'])).toBe(false);
+    });
     test('switches primary between external and embedded without leaving stale active sid', async () => {
         const shellTransport = new FakeShellTransport();
         const video = new ShellVideo({ shellTransport, containerElement: { style: {}, parentElement: null }, mpvSeparateWindow: false });

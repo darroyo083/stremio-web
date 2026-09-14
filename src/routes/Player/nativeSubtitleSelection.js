@@ -47,6 +47,33 @@ const resolvePrimarySubtitle = ({ embeddedTracks, externalTracks, language, expl
     return normalExternal ? { source: 'external', track: normalExternal } : null;
 };
 
+const resolveSecondaryLanguageSelection = ({
+    preference,
+    embeddedTracks,
+    externalTracks,
+    selectedEmbeddedId,
+    selectedExternalId,
+}) => {
+    if (preference !== null && preference !== undefined) {
+        if (preference.enabled === false) {
+            return null;
+        }
+        if (preference.enabled === true) {
+            const preferredLanguage = normalizeLanguage(preference.language);
+            if (preferredLanguage !== null) {
+                return preferredLanguage;
+            }
+        }
+    }
+
+    const selectedEmbedded = findExact(embeddedTracks, selectedEmbeddedId);
+    if (selectedEmbedded) {
+        return normalizeLanguage(selectedEmbedded.lang);
+    }
+
+    const selectedExternal = findExact(externalTracks, selectedExternalId);
+    return selectedExternal ? normalizeLanguage(selectedExternal.lang) : null;
+};
 const resolveSecondarySubtitle = ({ embeddedTracks, externalTracks, language, primaryTrackId, explicitSource, explicitId }) => {
     if (explicitSource === 'embedded') {
         const exact = findExact(embeddedTracks, explicitId, language);
@@ -65,7 +92,14 @@ const resolveSecondarySubtitle = ({ embeddedTracks, externalTracks, language, pr
     }
 
     const twinCueSecondary = findByLanguage(externalTracks, language, (track) => getTwinCueTrackRole(track.id) === 'secondary');
-    return twinCueSecondary ? { source: 'external', track: twinCueSecondary } : null;
+    if (twinCueSecondary) return { source: 'external', track: twinCueSecondary };
+
+    // Compatibility with the previously working external+external selector: not every
+    // external subtitle track keeps a TwinCue-shaped id after it reaches the player.
+    // An explicit language choice must still be able to select any matching external
+    // track while preferring paired/TwinCue secondaries when they are identifiable.
+    const normalExternal = findByLanguage(externalTracks, language);
+    return normalExternal ? { source: 'external', track: normalExternal } : null;
 };
 
 module.exports = {
@@ -73,4 +107,5 @@ module.exports = {
     languageMatches,
     resolvePrimarySubtitle,
     resolveSecondarySubtitle,
+    resolveSecondaryLanguageSelection,
 };

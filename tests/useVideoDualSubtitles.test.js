@@ -82,6 +82,13 @@ describe('useVideo dual subtitle controller', () => {
             ['selectedSecondarySubtitlesTrackId', null],
             ['selectedSecondaryExtraSubtitlesTrackId', 'twincue:dual:v1:pair:secondary'],
         ]);
+
+        video.dispatched.length = 0;
+        await act(async () => controller.setSecondarySubtitlesTrack('EMBEDDED_9'));
+        expect(propWrites(video)).toEqual([
+            ['selectedSecondaryExtraSubtitlesTrackId', null],
+            ['selectedSecondarySubtitlesTrackId', 'EMBEDDED_9'],
+        ]);
     });
 
     test('global and secondary delays are dispatched independently', async () => {

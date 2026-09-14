@@ -83,6 +83,7 @@ type SubtitlesMenuProps = {
     selectedExtraSubtitlesTrackId: string | null,
     selectedSecondarySubtitlesTrackId: string | null,
     selectedSecondaryExtraSubtitlesTrackId: string | null,
+    secondarySubtitlesLanguage?: string | null,
     extraSubtitlesOffset: number | null,
     extraSubtitlesDelay: number | null,
     secondarySubtitlesDelay: number,

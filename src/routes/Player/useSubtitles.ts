@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { CONSTANTS, languages, useFileDropListener, useShortcut, useToast } from 'stremio/common';
 import { snapSubtitleDelay, SUBTITLES_DELAY_STEP_MS } from './subtitleDelay';
 const { findTwinCueSecondaryTrack } = require('./twinCueSubtitles');
-const { resolveSecondarySubtitle } = require('./nativeSubtitleSelection');
+const { resolveSecondarySubtitle, resolveSecondaryLanguageSelection } = require('./nativeSubtitleSelection');
 
 const withFallbackLabels = (tracks?: SubtitleTrack[] | null): SubtitleTrack[] => {
     if (!Array.isArray(tracks)) {
@@ -193,6 +193,20 @@ const useSubtitles = ({
         return video.state.subtitlesTracks.concat(video.state.extraSubtitlesTracks);
     }, [video.state.subtitlesTracks, video.state.extraSubtitlesTracks]);
 
+    const secondarySubtitlesLanguage = useMemo(() => resolveSecondaryLanguageSelection({
+        preference: secondaryPreference,
+        embeddedTracks: video.state.subtitlesTracks,
+        externalTracks: video.state.extraSubtitlesTracks,
+        selectedEmbeddedId: video.state.selectedSecondarySubtitlesTrackId,
+        selectedExternalId: video.state.selectedSecondaryExtraSubtitlesTrackId,
+    }), [
+        secondaryPreference,
+        video.state.subtitlesTracks,
+        video.state.extraSubtitlesTracks,
+        video.state.selectedSecondarySubtitlesTrackId,
+        video.state.selectedSecondaryExtraSubtitlesTrackId,
+    ]);
+
     const hasTracks = allTracks.length > 0;
     const applySubtitleStyle = useCallback(() => {
         const currentSettings = settingsRef.current;
@@ -299,6 +313,10 @@ const useSubtitles = ({
             setSecondaryExtraSubtitlesTrack(null);
             return;
         }
+
+        // Keep the user's language choice independently from whether mpv has loaded
+        // the matching track yet. This lets lazy external subtitles and transient
+        // embedded track-list updates reconcile later without snapping the menu to OFF.
         setSecondaryPreference({ enabled: true, language: normalized });
     }, [setSecondarySubtitlesTrack, setSecondaryExtraSubtitlesTrack]);
 
@@ -497,12 +515,10 @@ const useSubtitles = ({
             });
 
             if (!resolved) {
-                if (video.state.selectedSecondarySubtitlesTrackId !== null) {
-                    setSecondarySubtitlesTrack(null);
-                }
-                if (video.state.selectedSecondaryExtraSubtitlesTrackId !== null) {
-                    setSecondaryExtraSubtitlesTrack(null);
-                }
+                // The requested language can be temporarily unavailable while an
+                // external subtitle is being added or mpv refreshes track-list. The
+                // explicit preference is authoritative, so wait for the next tracks
+                // update instead of turning the secondary selection back into OFF.
                 return;
             }
 
@@ -698,6 +714,7 @@ const useSubtitles = ({
         selectedExtraSubtitlesTrackId: video.state.selectedExtraSubtitlesTrackId,
         selectedSecondarySubtitlesTrackId: video.state.selectedSecondarySubtitlesTrackId,
         selectedSecondaryExtraSubtitlesTrackId: video.state.selectedSecondaryExtraSubtitlesTrackId,
+        secondarySubtitlesLanguage,
         extraSubtitlesOffset: video.state.extraSubtitlesOffset,
         extraSubtitlesDelay: video.state.extraSubtitlesDelay,
         secondarySubtitlesDelay: video.state.secondarySubtitlesDelay ?? 0,
@@ -724,6 +741,7 @@ const useSubtitles = ({
         selectSecondarySubtitlesLanguage,
         selectSecondaryEmbeddedTrack,
         selectSecondaryExtraTrack,
+        secondarySubtitlesLanguage,
         settings.interfaceLanguage,
         settings.subtitlesLanguage,
         video.state.extraSubtitlesDelay,
