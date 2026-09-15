@@ -174,6 +174,78 @@ describe('ShellVideo native dual external subtitles', () => {
         expect(hasSend(shellTransport, 'mpv-set-prop', ['secondary-sub-delay', -2.5])).toBe(true);
     });
 
+    test('strips primary ASS positioning while dual subtitles are active and restores it when secondary is off', async () => {
+        const shellTransport = new FakeShellTransport();
+        const video = new ShellVideo({
+            shellTransport,
+            containerElement: { style: {}, parentElement: null },
+            mpvSeparateWindow: false,
+        });
+
+        shellTransport.emit('mpv-prop-change', { name: 'mpv-version', data: '0.41.0' });
+        video.dispatch({
+            type: 'command',
+            commandName: 'load',
+            commandArgs: {
+                stream: { url: 'https://example.test/positioned-ass.mkv' },
+                platform: 'windows',
+                assSubtitlesStyling: true,
+                hardwareDecoding: false,
+                gpuVideoProcessing: false,
+                videoMode: null,
+                time: 0,
+            },
+        });
+        await flush();
+        shellTransport.emit('mpv-prop-change', {
+            name: 'track-list',
+            data: [
+                { id: 5, type: 'sub', lang: 'eng', codec: 'ass', title: 'English ASS' },
+                { id: 9, type: 'sub', lang: 'ita', codec: 'ass', title: 'Italian ASS' },
+            ],
+        });
+        video.dispatch({ type: 'setProp', propName: 'selectedSubtitlesTrackId', propValue: 'EMBEDDED_5' });
+        shellTransport.emit('mpv-prop-change', { name: 'sid', data: 5 });
+        video.dispatch({ type: 'setProp', propName: 'subtitlesOffset', propValue: 18 });
+
+        shellTransport.clear();
+        video.dispatch({ type: 'setProp', propName: 'selectedSecondarySubtitlesTrackId', propValue: 'EMBEDDED_9' });
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['sub-ass-override', 'strip'])).toBe(true);
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['sub-pos', 82])).toBe(true);
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['secondary-sid', '9'])).toBe(true);
+
+        shellTransport.clear();
+        video.dispatch({ type: 'setProp', propName: 'selectedSecondarySubtitlesTrackId', propValue: null });
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['sub-ass-override', 'no'])).toBe(true);
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['sub-pos', 100])).toBe(true);
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['secondary-sid', 'no'])).toBe(true);
+    });
+
+    test('plain text primary keeps its user vertical position when dual mode toggles', async () => {
+        const shellTransport = new FakeShellTransport();
+        const video = new ShellVideo({ shellTransport, containerElement: { style: {}, parentElement: null }, mpvSeparateWindow: false });
+        shellTransport.emit('mpv-prop-change', { name: 'mpv-version', data: '0.41.0' });
+        video.dispatch({ type: 'command', commandName: 'load', commandArgs: { stream: { url: 'https://example.test/plain-text.mkv' }, platform: 'windows', assSubtitlesStyling: true, hardwareDecoding: false, gpuVideoProcessing: false, videoMode: null, time: 0 } });
+        await flush();
+        shellTransport.emit('mpv-prop-change', { name: 'track-list', data: [
+            { id: 5, type: 'sub', lang: 'eng', codec: 'subrip', title: 'English SRT' },
+            { id: 9, type: 'sub', lang: 'ita', codec: 'subrip', title: 'Italian SRT' },
+        ] });
+        video.dispatch({ type: 'setProp', propName: 'selectedSubtitlesTrackId', propValue: 'EMBEDDED_5' });
+        shellTransport.emit('mpv-prop-change', { name: 'sid', data: 5 });
+        video.dispatch({ type: 'setProp', propName: 'subtitlesOffset', propValue: 23 });
+
+        shellTransport.clear();
+        video.dispatch({ type: 'setProp', propName: 'selectedSecondarySubtitlesTrackId', propValue: 'EMBEDDED_9' });
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['sub-ass-override', 'strip'])).toBe(true);
+        expect(shellTransport.sent.some(([name, args]) => name === 'mpv-set-prop' && args[0] === 'sub-pos')).toBe(false);
+
+        shellTransport.clear();
+        video.dispatch({ type: 'setProp', propName: 'selectedSecondarySubtitlesTrackId', propValue: null });
+        expect(hasSend(shellTransport, 'mpv-set-prop', ['sub-ass-override', 'no'])).toBe(true);
+        expect(shellTransport.sent.some(([name, args]) => name === 'mpv-set-prop' && args[0] === 'sub-pos')).toBe(false);
+    });
+
     test('supports embedded primary with TwinCue secondary and shared delay', async () => {
         const shellTransport = new FakeShellTransport();
         const video = new ShellVideo({ shellTransport, containerElement: { style: {}, parentElement: null }, mpvSeparateWindow: false });

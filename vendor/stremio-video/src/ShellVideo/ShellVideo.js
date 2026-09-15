@@ -179,7 +179,7 @@ function ShellVideo(options) {
     function updateASSSubtitlesStylingActive() {
         var track = getSelectedSubtitleTrack();
         var codec = track && typeof track.codec === 'string' ? track.codec.toLowerCase() : null;
-        var active = assSubtitlesStylingEnabled && (codec === 'ass' || codec === 'ssa');
+        var active = !hasSecondarySubtitleSelection() && assSubtitlesStylingEnabled && (codec === 'ass' || codec === 'ssa');
         if (props.assSubtitlesStylingActive !== active) {
             props.assSubtitlesStylingActive = active;
             applySubtitleStyle();
@@ -223,6 +223,15 @@ function ShellVideo(options) {
     function hasSecondarySubtitleSelection() {
         return typeof props.selectedSecondarySubtitlesTrackId === 'string' ||
             typeof props.selectedSecondaryExtraSubtitlesTrackId === 'string';
+    }
+    function applyPrimarySubtitleRenderingMode() {
+        if (stream === null) {
+            return;
+        }
+
+        var subAssOverride = hasSecondarySubtitleSelection() ? 'strip' : (assSubtitlesStylingEnabled ? 'no' : 'strip');
+        ipc.send('mpv-set-prop', ['sub-ass-override', subAssOverride]);
+        updateASSSubtitlesStylingActive();
     }
     function getGlobalSubtitleDelay() {
         return typeof props.extraSubtitlesDelay === 'number' && isFinite(props.extraSubtitlesDelay) ? props.extraSubtitlesDelay : 0;
@@ -410,6 +419,7 @@ function ShellVideo(options) {
                 props.selectedSecondarySubtitlesTrackId = getExtraTrackIdByMpvId(args.data) === null ? embeddedProp(args) : null;
                 // eslint-disable-next-line no-console
                 console.log('[TwinCue native-subtitles] shell -> Web secondary-sid', args.data);
+                applyPrimarySubtitleRenderingMode();
                 onPropChanged('selectedSecondarySubtitlesTrackId');
                 break;
             }
@@ -673,6 +683,7 @@ function ShellVideo(options) {
                 }) : null;
                 props.selectedSecondarySubtitlesTrackId = secondaryEmbeddedTrack ? secondaryEmbeddedTrack.id : null;
                 appliedSecondaryExtraMpvId = null;
+                applyPrimarySubtitleRenderingMode();
                 if (stream !== null) {
                     if (props.selectedSecondarySubtitlesTrackId !== null) {
                         ensureGlobalSubtitleDelay();
@@ -691,6 +702,7 @@ function ShellVideo(options) {
                 var secondaryTrack = typeof propValue === 'string' ? getNativeExtraTrack(propValue) : null;
                 props.selectedSecondaryExtraSubtitlesTrackId = secondaryTrack ? secondaryTrack.id : null;
                 appliedSecondaryExtraMpvId = null;
+                applyPrimarySubtitleRenderingMode();
                 if (stream !== null) {
                     if (props.selectedSecondaryExtraSubtitlesTrackId !== null) {
                         ensureGlobalSubtitleDelay();
